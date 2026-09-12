@@ -6,13 +6,14 @@ import Editor from '@monaco-editor/react';
 const ProblemDetail = () => {
     const { id } = useParams();
     const [problem, setProblem] = useState(null);
-    const [code, setCode] = useState('# Write your python code here\n');
+    const [language, setLanguage] = useState('python');
+    const [code, setCode] = useState('# Write your code here\n');
     const [submitting, setSubmitting] = useState(false);
     const [verdict, setVerdict] = useState('');
     const [execTime, setExecTime] = useState(null);
 
     useEffect(() => {
-        axios.get(\`http://localhost:5000/api/problems/\${id}\`)
+        axios.get(`http://localhost:5000/api/problems/${id}`)
             .then(res => setProblem(res.data))
             .catch(err => console.error(err));
     }, [id]);
@@ -26,7 +27,7 @@ const ProblemDetail = () => {
             const res = await axios.post('http://localhost:5000/api/submit', {
                 problemId: id,
                 code: code,
-                language: 'python'
+                language: language
             });
             
             const subId = res.data.submissionId;
@@ -68,7 +69,17 @@ const ProblemDetail = () => {
             {/* Right Column: Code Editor */}
             <div className="w-full md:w-2/3 flex flex-col bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
                 <div className="bg-gray-100 px-4 py-2 border-b flex justify-between items-center">
-                    <span className="font-semibold text-gray-700">Code Editor (Python 3)</span>
+                    <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-700">Code Editor</span>
+                        <select 
+                            value={language} 
+                            onChange={(e) => setLanguage(e.target.value)}
+                            className="text-sm bg-white border border-gray-300 rounded px-2 py-1 outline-none"
+                        >
+                            <option value="python">Python 3</option>
+                            <option value="cpp">C++ (g++)</option>
+                        </select>
+                    </div>
                     <button 
                         onClick={handleSubmit} 
                         disabled={submitting}
@@ -81,7 +92,7 @@ const ProblemDetail = () => {
                 <div className="h-96">
                     <Editor
                         height="100%"
-                        defaultLanguage="python"
+                        language={language}
                         theme="vs-dark"
                         value={code}
                         onChange={(value) => setCode(value)}

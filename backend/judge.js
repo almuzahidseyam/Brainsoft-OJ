@@ -1,48 +1,70 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 async function runCode(code, language, input) {
     return new Promise((resolve) => {
-        if (language !== 'python') {
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+
+        const basename = uuidv4();
+        let filename;
+        let executable;
+        let command;
+        let args = [];
+
+        if (language === 'python') {
+            filename = path.join(tempDir, \`\${basename}.py\`);
+            fs.writeFileSync(filename, code);
+            command = 'python';
+            args = [filename];
+        } else if (language === 'cpp') {
+            filename = path.join(tempDir, \`\${basename}.cpp\`);
+            executable = path.join(tempDir, \`\${basename}.exe\`);
+            fs.writeFileSync(filename, code);
+            
+            // Compile C++
+            const compileProcess = spawnSync('g++', [filename, '-o', executable]);
+            if (compileProcess.status !== 0) {
+                resolve({ error: true, errorType: 'Compilation Error', details: compileProcess.stderr.toString() });
+                try { fs.unlinkSync(filename); } catch(e){}
+                return;
+            }
+            command = executable;
+            args = [];
+        } else {
             resolve({ error: true, errorType: 'Unsupported Language' });
             return;
         }
 
-        const tempDir = path.join(__dirname, 'temp');
-        if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-
-        const filename = path.join(tempDir, \`\${uuidv4()}.py\`);
-        fs.writeFileSync(filename, code);
-
         const startTime = Date.now();
-        const process = spawn('python', [filename]);
+        const childProcess = spawn(command, args);
 
         let output = '';
         let errorOutput = '';
 
         // Timeout 2 seconds
         const timeout = setTimeout(() => {
-            process.kill();
+            childProcess.kill();
             resolve({ error: true, errorType: 'Time Limit Exceeded', executionTime: Date.now() - startTime });
-            try { fs.unlinkSync(filename); } catch (e) {}
+            try { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } catch (e) {}
         }, 2000);
 
-        process.stdout.on('data', (data) => {
+        childProcess.stdout.on('data', (data) => {
             output += data.toString();
         });
 
-        process.stderr.on('data', (data) => {
+        childProcess.stderr.on('data', (data) => {
             errorOutput += data.toString();
         });
 
-        process.on('close', (code) => {
+        childProcess.on('close', (exitCode) => {
             clearTimeout(timeout);
-            try { fs.unlinkSync(filename); } catch (e) {}
+            try { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } catch (e) {}
             
             const executionTime = Date.now() - startTime;
-            if (code !== 0) {
+            if (exitCode !== 0) {
                 resolve({ error: true, errorType: 'Runtime Error', executionTime, details: errorOutput });
             } else {
                 resolve({ error: false, output, executionTime });
@@ -50,8 +72,8 @@ async function runCode(code, language, input) {
         });
 
         if (input) {
-            process.stdin.write(input);
-            process.stdin.end();
+            childProcess.stdin.write(input);
+            childProcess.stdin.end();
         }
     });
 }

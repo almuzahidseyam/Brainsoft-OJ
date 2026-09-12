@@ -70,9 +70,9 @@ app.get('/api/problems/:id', async (req, res) => {
 app.post('/api/submit', async (req, res) => {
     const { problemId, code, language } = req.body;
     
-    // In our v1, we only support python
-    if (language !== 'python') {
-        return res.status(400).json({ error: "Only python is supported in v1." });
+    // In our v1, we support python and cpp
+    if (language !== 'python' && language !== 'cpp') {
+        return res.status(400).json({ error: "Only python and cpp are supported." });
     }
 
     const problem = await db.get(`SELECT * FROM problems WHERE id = ?`, [problemId]);
