@@ -73,11 +73,17 @@ const ProblemDetail = () => {
                         <span className="font-semibold text-gray-700">Code Editor</span>
                         <select 
                             value={language} 
-                            onChange={(e) => setLanguage(e.target.value)}
-                            className="text-sm bg-white border border-gray-300 rounded px-2 py-1 outline-none"
+                            onChange={(e) => {
+                                setLanguage(e.target.value);
+                                if(e.target.value === 'java') setCode('public class Solution {\n    public static void main(String[] args) {\n        // Your code here\n    }\n}');
+                                else if (e.target.value === 'cpp') setCode('#include <iostream>\nusing namespace std;\n\nint main() {\n    // Your code here\n    return 0;\n}');
+                                else setCode('# Write your code here\n');
+                            }}
+                            className="text-sm bg-white border border-gray-300 rounded px-2 py-1 outline-none font-medium"
                         >
-                            <option value="python">Python 3</option>
-                            <option value="cpp">C++ (g++)</option>
+                            <option value="python">Python 3 (Standard Library)</option>
+                            <option value="cpp">C++ (g++ with STL)</option>
+                            <option value="java">Java (JDK 21 & BigInteger)</option>
                         </select>
                     </div>
                     <button 

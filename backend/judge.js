@@ -15,13 +15,13 @@ async function runCode(code, language, input) {
         let args = [];
 
         if (language === 'python') {
-            filename = path.join(tempDir, \`\${basename}.py\`);
+            filename = path.join(tempDir, `${basename}.py`);
             fs.writeFileSync(filename, code);
             command = 'python';
             args = [filename];
         } else if (language === 'cpp') {
-            filename = path.join(tempDir, \`\${basename}.cpp\`);
-            executable = path.join(tempDir, \`\${basename}.exe\`);
+            filename = path.join(tempDir, `${basename}.cpp`);
+            executable = path.join(tempDir, `${basename}.exe`);
             fs.writeFileSync(filename, code);
             
             // Compile C++
@@ -33,6 +33,29 @@ async function runCode(code, language, input) {
             }
             command = executable;
             args = [];
+        } else if (language === 'java') {
+            // Java requires the public class name to match the filename. We will enforce class Solution.
+            filename = path.join(tempDir, 'Solution.java');
+            executable = path.join(tempDir, 'Solution.class'); // For deletion tracking
+            
+            // If there's concurrent Java submissions, 'Solution.java' might collide. 
+            // Better to create a sub-directory for each Java submission.
+            const javaDir = path.join(tempDir, basename);
+            fs.mkdirSync(javaDir);
+            filename = path.join(javaDir, 'Solution.java');
+            fs.writeFileSync(filename, code);
+            
+            const compileProcess = spawnSync('javac', [filename]);
+            if (compileProcess.status !== 0) {
+                resolve({ error: true, errorType: 'Compilation Error', details: compileProcess.stderr.toString() });
+                try { fs.rmSync(javaDir, { recursive: true, force: true }); } catch(e){}
+                return;
+            }
+            command = 'java';
+            args = ['-cp', javaDir, 'Solution'];
+            
+            // Override cleanup specifically for java to remove the directory
+            executable = javaDir; 
         } else {
             resolve({ error: true, errorType: 'Unsupported Language' });
             return;
@@ -48,7 +71,10 @@ async function runCode(code, language, input) {
         const timeout = setTimeout(() => {
             childProcess.kill();
             resolve({ error: true, errorType: 'Time Limit Exceeded', executionTime: Date.now() - startTime });
-            try { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } catch (e) {}
+            try { 
+                if(language === 'java') { fs.rmSync(executable, { recursive: true, force: true }); } 
+                else { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } 
+            } catch (e) {}
         }, 2000);
 
         childProcess.stdout.on('data', (data) => {
@@ -61,7 +87,10 @@ async function runCode(code, language, input) {
 
         childProcess.on('close', (exitCode) => {
             clearTimeout(timeout);
-            try { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } catch (e) {}
+            try { 
+                if(language === 'java') { fs.rmSync(executable, { recursive: true, force: true }); } 
+                else { fs.unlinkSync(filename); if(executable) fs.unlinkSync(executable); } 
+            } catch (e) {}
             
             const executionTime = Date.now() - startTime;
             if (exitCode !== 0) {
