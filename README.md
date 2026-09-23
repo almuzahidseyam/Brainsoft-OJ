@@ -30,7 +30,16 @@ Most Online Judges (like Codeforces, LeetCode, or SYZOJ) require setting up comp
 - **Frontend:** React + Vite + Tailwind CSS
 - **Backend:** Node.js + Express
 - **Database:** SQLite
-- **Judge Engine:** A custom sandboxed `child_process` engine that routes compilations (g++, javac) and executes binaries against hidden test cases in real-time.
+- **Judge Engine:** A custom `child_process` engine that routes compilations (g++, javac) and runs
+  the resulting binaries against hidden test cases in real time. Each submission gets its own
+  temporary directory, a compile timeout, a run timeout and an output cap.
+
+  > **It is not a sandbox.** Submitted code runs as whichever user runs the server, with that
+  > user's access to the filesystem and the network — it can read `database.sqlite` and print the
+  > hidden test cases if it wants to. That is an acceptable trade for a judge you run yourself on
+  > your own machine, which is what local-first means here. Do not expose this to the internet or
+  > to submitters you do not trust without putting a real boundary around it: a container, a
+  > restricted user account, or an OS-level sandbox.
 
 ## 🚀 How to Run Locally
 

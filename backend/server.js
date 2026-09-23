@@ -51,23 +51,26 @@ async function initDB() {
     }
 }
 
-initDB();
+// Express 4 does not catch a rejection from an async handler: the request
+// hangs with no response and the reason is lost. Every handler is wrapped.
+const route = (handler) => (req, res, next) =>
+    Promise.resolve(handler(req, res, next)).catch(next);
 
 // API: Get all problems
-app.get('/api/problems', async (req, res) => {
+app.get('/api/problems', route(async (req, res) => {
     const problems = await db.all(`SELECT id, title, difficulty FROM problems`);
     res.json(problems);
-});
+}));
 
 // API: Get problem details
-app.get('/api/problems/:id', async (req, res) => {
+app.get('/api/problems/:id', route(async (req, res) => {
     const problem = await db.get(`SELECT * FROM problems WHERE id = ?`, [req.params.id]);
     if (!problem) return res.status(404).json({ error: "Problem not found" });
     res.json(problem);
-});
+}));
 
 // API: Submit code
-app.post('/api/submit', async (req, res) => {
+app.post('/api/submit', route(async (req, res) => {
     const { problemId, code, language } = req.body;
     
     // In our v2, we support python, cpp, and java
@@ -112,16 +115,34 @@ app.post('/api/submit', async (req, res) => {
 
     // Update submission with final verdict
     await db.run(`UPDATE submissions SET verdict = ?, execution_time = ? WHERE id = ?`, [verdict, maxTime, submissionId]);
-});
+}));
 
 // API: Get submission status
-app.get('/api/submissions/:id', async (req, res) => {
+app.get('/api/submissions/:id', route(async (req, res) => {
     const submission = await db.get(`SELECT * FROM submissions WHERE id = ?`, [req.params.id]);
     if (!submission) return res.status(404).json({ error: "Submission not found" });
     res.json(submission);
+}));
+
+// eslint-disable-next-line no-unused-vars -- Express identifies the error
+// handler by its arity; dropping `next` turns it into an ordinary middleware.
+app.use((error, req, res, next) => {
+    console.error('[api]', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Brainsoft-OJ Backend running on http://localhost:${PORT}`);
-});
+
+// initDB() was called without being awaited, so the server began accepting
+// requests before `db` existed. A request arriving in those first moments hit
+// `db === undefined` and hung. Listen only once the database is ready.
+initDB()
+    .then(() => {
+        app.listen(PORT, () => {
+            console.log(`Brainsoft-OJ Backend running on http://localhost:${PORT}`);
+        });
+    })
+    .catch((error) => {
+        console.error('Failed to initialise the database:', error);
+        process.exit(1);
+    });
