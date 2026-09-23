@@ -34,7 +34,7 @@ const ProblemDetail = () => {
             
             // Poll for result
             const poll = setInterval(async () => {
-                const statusRes = await axios.get(\`http://localhost:5000/api/submissions/\${subId}\`);
+                const statusRes = await axios.get(`http://localhost:5000/api/submissions/${subId}`);
                 if (statusRes.data.verdict !== 'Pending') {
                     clearInterval(poll);
                     setVerdict(statusRes.data.verdict);
@@ -89,7 +89,7 @@ const ProblemDetail = () => {
                     <button 
                         onClick={handleSubmit} 
                         disabled={submitting}
-                        className={\`px-4 py-1.5 rounded text-white font-medium transition \${submitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}\`}
+                        className={`px-4 py-1.5 rounded text-white font-medium transition ${submitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         {submitting ? 'Submitting...' : 'Submit Code'}
                     </button>
@@ -108,11 +108,11 @@ const ProblemDetail = () => {
 
                 {/* Verdict Panel */}
                 {verdict && (
-                    <div className={\`p-4 border-t font-semibold flex justify-between items-center \${
+                    <div className={`p-4 border-t font-semibold flex justify-between items-center ${
                         verdict === 'Accepted' ? 'bg-green-50 text-green-700' :
                         verdict === 'Judging...' ? 'bg-blue-50 text-blue-700' :
                         'bg-red-50 text-red-700'
-                    }\`}>
+                    }`}>
                         <div className="text-lg">{verdict}</div>
                         {execTime !== null && <div className="text-sm opacity-80">{execTime} ms</div>}
                     </div>
