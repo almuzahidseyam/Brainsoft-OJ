@@ -4,3 +4,6 @@ temp/
 database.sqlite
 .env
 .DS_Store
+audit-current.json
+.judge.lock
+__pycache__/

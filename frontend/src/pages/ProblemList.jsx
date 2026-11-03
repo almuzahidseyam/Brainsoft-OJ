@@ -1,25 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../api';
 import { Link } from 'react-router-dom';
 
 const ProblemList = () => {
     const [problems, setProblems] = useState([]);
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        axios.get('http://localhost:5000/api/problems')
-            .then(res => setProblems(res.data))
-            .catch(err => console.error(err));
+        const controller = new AbortController();
+        api('/problems', { signal: controller.signal }).then(setProblems)
+            .catch(err => { if (!controller.signal.aborted) setError(err.message); })
+            .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+        return () => controller.abort();
     }, []);
 
     return (
         <div className="flex flex-col gap-6">
             {/* Hero Section */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-8 text-white">
-                <h1 className="text-3xl font-extrabold mb-2">Welcome to Brainsoft-OJ! 🚀</h1>
-                <p className="text-blue-100 text-lg max-w-2xl">
-                    An advanced, open-source Online Judge platform. Sharpen your competitive programming skills with ultra-fast real-time judging for <b>C++ (STL)</b>, <b>Python</b>, and <b>Java</b>.
+            <div className="bg-white border border-gray-200 rounded-xl p-8">
+                <h1 className="text-3xl font-bold mb-2">Practice, submit, understand.</h1>
+                <p className="text-gray-600 text-lg max-w-2xl">
+                    A local practice judge for C++, Python and Java. Submitting requires an owner-provided access token and an available isolated runner.
                 </p>
             </div>
+            {error && <p role="alert" className="text-red-700">{error}</p>}
+            {loading && <p role="status">Loading problems...</p>}
+            {!loading && !error && !problems.length && <p>No problems have been added yet.</p>}
 
             {/* Problem Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

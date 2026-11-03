@@ -1,151 +1,82 @@
-const { spawn } = require('child_process');
-const fs = require('fs');
-const fsp = require('fs/promises');
-const os = require('os');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
+const IMAGE = 'brainsoft-judge:local';
+const LABEL = 'brainsoft-oj.worker=true';
 
-// Wall-clock limits. Compilation gets its own, separate from execution: a
-// submission full of template metaprogramming can keep a compiler busy for
-// minutes, and the previous version ran the compiler through spawnSync, which
-// blocks the Node event loop -- so one such submission froze the judge for
-// every other user until the compiler decided to return.
-const COMPILE_TIMEOUT_MS = 10000;
-const RUN_TIMEOUT_MS = 2000;
-
-// stdout and stderr were accumulated without a ceiling, so a submission looping
-// on print could allocate gigabytes before the timer fired.
-const MAX_OUTPUT_BYTES = 1024 * 1024;
-
-// `python` does not exist on most Linux and macOS installations, where the
-// interpreter is `python3`. Windows usually has both.
-const PYTHON = process.env.JUDGE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
-
-function runProcess(command, args, { input, timeoutMs, cwd }) {
-    return new Promise((resolve) => {
-        let child;
-        try {
-            child = spawn(command, args, { cwd, windowsHide: true });
-        } catch (error) {
-            resolve({ timedOut: false, exitCode: -1, stdout: '', stderr: String(error && error.message) });
-            return;
-        }
-
-        let stdout = '';
-        let stderr = '';
-        let truncated = false;
-        let settled = false;
-        let timedOut = false;
-
-        child.stdout.on('data', (chunk) => {
-            if (stdout.length >= MAX_OUTPUT_BYTES) { truncated = true; return; }
-            stdout += chunk.toString();
-        });
-        child.stderr.on('data', (chunk) => {
-            if (stderr.length >= MAX_OUTPUT_BYTES) { truncated = true; return; }
-            stderr += chunk.toString();
-        });
-
-        const settle = (result) => {
-            if (settled) return;           // 'close' still arrives after a kill
-            settled = true;
-            clearTimeout(timer);
-            resolve(result);
+// Only Docker is invoked on the host. Source is stdin, never a shell command.
+function command(args, { input = '', timeout = 20000, limit = 1048576 } = {}) {
+    return new Promise(resolve => {
+        const child = spawn('docker', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        const chunks = { stdout: [], stderr: [] };
+        let bytes = 0, stopped = false, done = false, reapTimer;
+        const finish = exitCode => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer); clearTimeout(reapTimer);
+            resolve({ exitCode, stopped, stdout: Buffer.concat(chunks.stdout).toString('utf8'), stderr: Buffer.concat(chunks.stderr).toString('utf8') });
         };
-
-        const timer = setTimeout(() => {
-            timedOut = true;
-            // SIGTERM can be ignored; follow it with SIGKILL so a submission
-            // cannot outlive its limit by declining to die.
-            child.kill('SIGTERM');
-            setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } }, 250);
-        }, timeoutMs);
-
-        child.on('error', (error) => settle({ timedOut, exitCode: -1, stdout, stderr: String(error.message), truncated }));
-        child.on('close', (exitCode) => settle({ timedOut, exitCode, stdout, stderr, truncated }));
-
-        if (input) {
-            // A program that never reads stdin makes this write fail with EPIPE.
-            child.stdin.on('error', () => {});
-            child.stdin.write(input);
-        }
-        child.stdin.end();
+        const stop = () => {
+            stopped = true; child.kill('SIGKILL');
+            reapTimer = setTimeout(() => finish(-1), 1000);
+        };
+        const timer = setTimeout(stop, timeout);
+        for (const stream of ['stdout', 'stderr']) child[stream].on('data', chunk => {
+            chunks[stream].push(chunk.subarray(0, Math.max(0, limit - bytes)));
+            bytes += chunk.length;
+            if (bytes > limit && !stopped) stop();
+        });
+        child.on('error', () => finish(-1)); child.on('close', finish);
+        child.stdin.on('error', () => {}); child.stdin.end(input);
     });
 }
 
-async function runCode(code, language, input) {
-    const tempRoot = path.join(__dirname, 'temp');
-    await fsp.mkdir(tempRoot, { recursive: true });
-
-    // One directory per submission, always. The previous version shared the
-    // temp directory for python and cpp and only isolated java, so two
-    // submissions landing together could read each other's files.
-    const workDir = path.join(tempRoot, uuidv4());
-    await fsp.mkdir(workDir);
-
-    const cleanup = () => fsp.rm(workDir, { recursive: true, force: true }).catch(() => {});
-
-    try {
-        let command;
-        let args = [];
-
-        if (language === 'python') {
-            const file = path.join(workDir, 'main.py');
-            await fsp.writeFile(file, code);
-            command = PYTHON;
-            args = [file];
-        } else if (language === 'cpp') {
-            const file = path.join(workDir, 'main.cpp');
-            const binary = path.join(workDir, process.platform === 'win32' ? 'main.exe' : 'main');
-            await fsp.writeFile(file, code);
-            const compiled = await runProcess('g++', [file, '-o', binary, '-std=c++17', '-O2'], {
-                timeoutMs: COMPILE_TIMEOUT_MS, cwd: workDir,
-            });
-            if (compiled.timedOut) {
-                return { error: true, errorType: 'Compilation Error', details: 'Compilation timed out.' };
-            }
-            if (compiled.exitCode !== 0) {
-                return { error: true, errorType: 'Compilation Error', details: compiled.stderr };
-            }
-            command = binary;
-        } else if (language === 'java') {
-            // javac requires the file name to match the public class.
-            const file = path.join(workDir, 'Solution.java');
-            await fsp.writeFile(file, code);
-            const compiled = await runProcess('javac', [file], {
-                timeoutMs: COMPILE_TIMEOUT_MS, cwd: workDir,
-            });
-            if (compiled.timedOut) {
-                return { error: true, errorType: 'Compilation Error', details: 'Compilation timed out.' };
-            }
-            if (compiled.exitCode !== 0) {
-                return { error: true, errorType: 'Compilation Error', details: compiled.stderr };
-            }
-            command = 'java';
-            args = ['-cp', workDir, 'Solution'];
-        } else {
-            return { error: true, errorType: 'Unsupported Language' };
-        }
-
-        const startTime = Date.now();
-        const result = await runProcess(command, args, {
-            input, timeoutMs: RUN_TIMEOUT_MS, cwd: workDir,
-        });
-        const executionTime = Date.now() - startTime;
-
-        if (result.timedOut) return { error: true, errorType: 'Time Limit Exceeded', executionTime };
-        if (result.truncated) {
-            return { error: true, errorType: 'Output Limit Exceeded', executionTime };
-        }
-        if (result.exitCode !== 0) {
-            return { error: true, errorType: 'Runtime Error', executionTime, details: result.stderr };
-        }
-        return { error: false, output: result.stdout, executionTime };
-    } finally {
-        // Runs on every path, including the early returns above, so a
-        // compilation failure no longer leaves its directory behind.
-        await cleanup();
-    }
+function containerArgs(name) {
+    return ['create', '--pull=never', '--interactive', '--name', name, '--label', LABEL,
+        '--network=none', '--read-only', '--cap-drop=ALL', '--cap-add=SETUID', '--cap-add=SETGID',
+        '--security-opt=no-new-privileges', '--pids-limit=64', '--cpus=1', '--memory=512m', '--memory-swap=512m',
+        '--ulimit=nofile=128:128', '--tmpfs=/work:rw,nosuid,nodev,size=64m,mode=1777',
+        '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777', IMAGE];
 }
 
-module.exports = { runCode };
+function createRunner({ enabled = false, execute = command } = {}) {
+    let ready = false;
+    async function initialize() {
+        ready = false;
+        if (!enabled) return false;
+        const os = await execute(['info', '--format', '{{.OSType}}'], { timeout: 5000 });
+        if (os.exitCode !== 0 || os.stdout.trim() !== 'linux') return false;
+        if ((await execute(['image', 'inspect', IMAGE], { timeout: 5000 })).exitCode !== 0) return false;
+        const stale = await execute(['ps', '-aq', '--filter', `label=${LABEL}`]);
+        if (stale.exitCode !== 0) return false;
+        for (const id of stale.stdout.trim().split(/\s+/).filter(Boolean)) {
+            if (!/^[a-f0-9]{12,64}$/.test(id) || (await execute(['rm', '--force', id])).exitCode !== 0) return false;
+        }
+        ready = true;
+        return true;
+    }
+    async function runCode(code, language, input) {
+        if (!ready) throw new Error('Judge unavailable');
+        if (!['python', 'cpp', 'java'].includes(language)) throw new Error('Unsupported language');
+        const name = `brainsoft-${randomUUID()}`;
+        let result;
+        try {
+            if ((await execute(containerArgs(name))).exitCode !== 0) throw new Error('Cannot create worker');
+            const ran = await execute(['start', '--attach', '--interactive', name], {
+                input: JSON.stringify({ code, language, input }), timeout: 20000,
+            });
+            if (ran.exitCode !== 0 || ran.stopped) throw new Error('Worker failed');
+            result = JSON.parse(ran.stdout);
+            if (!['OK', 'Compilation Error', 'Runtime Error', 'Time Limit Exceeded', 'Output Limit Exceeded'].includes(result.status) ||
+                typeof result.output !== 'string' || !Number.isFinite(result.executionTime) || result.executionTime < 0) throw new Error('Invalid worker result');
+        } catch (error) { ready = false; throw error; }
+        finally {
+            // A killed Docker CLI does not kill the container: remove its whole process tree.
+            if ((await execute(['rm', '--force', name], { timeout: 10000 })).exitCode !== 0) {
+                ready = false; throw new Error('Worker cleanup failed; check Docker before restarting');
+            }
+        }
+        return result;
+    }
+    return { initialize, runCode, isReady: () => ready };
+}
+module.exports = { createRunner, containerArgs, command };

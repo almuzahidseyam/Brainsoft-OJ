@@ -1,56 +1,56 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import { api, waitForVerdict } from '../api';
 import Editor from '@monaco-editor/react';
+import '../editor';
 
-const ProblemDetail = () => {
-    const { id } = useParams();
+const ProblemDetail = ({ id }) => {
     const [problem, setProblem] = useState(null);
     const [language, setLanguage] = useState('python');
     const [code, setCode] = useState('# Write your code here\n');
     const [submitting, setSubmitting] = useState(false);
     const [verdict, setVerdict] = useState('');
     const [execTime, setExecTime] = useState(null);
+    const [token, setToken] = useState('');
+    const [error, setError] = useState('');
+    const requestRef = useRef(null);
 
     useEffect(() => {
-        axios.get(`http://localhost:5000/api/problems/${id}`)
-            .then(res => setProblem(res.data))
-            .catch(err => console.error(err));
+        const controller = new AbortController();
+        api(`/problems/${id}`, { signal: controller.signal })
+            .then(setProblem)
+            .catch(err => { if (!controller.signal.aborted) setError(err.message); });
+        return () => { controller.abort(); requestRef.current?.abort(); };
     }, [id]);
 
     const handleSubmit = async () => {
+        requestRef.current?.abort();
+        const controller = new AbortController();
+        requestRef.current = controller;
         setSubmitting(true);
         setVerdict('Judging...');
         setExecTime(null);
         
         try {
-            const res = await axios.post('http://localhost:5000/api/submit', {
-                problemId: id,
-                code: code,
-                language: language
+            const options = { token, signal: controller.signal };
+            const res = await api('/submit', { ...options, body: {
+                problemId: Number(id), code, language,
+            }
             });
-            
-            const subId = res.data.submissionId;
-            
-            // Poll for result
-            const poll = setInterval(async () => {
-                const statusRes = await axios.get(`http://localhost:5000/api/submissions/${subId}`);
-                if (statusRes.data.verdict !== 'Pending') {
-                    clearInterval(poll);
-                    setVerdict(statusRes.data.verdict);
-                    setExecTime(statusRes.data.execution_time);
-                    setSubmitting(false);
-                }
-            }, 1000);
-            
+            const result = await waitForVerdict(res.submissionId, options);
+            if (!controller.signal.aborted) {
+                setVerdict(result.verdict);
+                setExecTime(result.execution_time);
+            }
         } catch (error) {
-            console.error(error);
-            setVerdict("Submission Error");
-            setSubmitting(false);
+            if (!controller.signal.aborted) setVerdict(error.message);
+        } finally {
+            if (!controller.signal.aborted) setSubmitting(false);
         }
     };
 
-    if (!problem) return <div className="p-4">Loading problem...</div>;
+    if (error) return <div role="alert" className="p-4 text-red-700">{error}</div>;
+    if (!problem) return <div role="status" className="p-4">Loading problem...</div>;
 
     return (
         <div className="flex flex-col md:flex-row gap-6">
@@ -64,6 +64,15 @@ const ProblemDetail = () => {
                 <div className="prose mb-6">
                     <p className="text-gray-700 whitespace-pre-wrap">{problem.description}</p>
                 </div>
+                {problem.samples.map((sample, index) => <section key={index} className="my-4">
+                    <h3 className="font-semibold">Sample {index + 1}</h3>
+                    <p>Input</p><pre className="bg-gray-50 p-2 whitespace-pre-wrap">{sample.input}</pre>
+                    <p>Output</p><pre className="bg-gray-50 p-2 whitespace-pre-wrap">{sample.output}</pre>
+                </section>)}
+                <label className="block text-sm font-semibold" htmlFor="judge-token">Judge access token</label>
+                <input id="judge-token" type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="off"
+                    className="mt-2 w-full border rounded p-2" aria-describedby="token-help" />
+                <p id="token-help" className="mt-2 text-sm text-gray-600">Get this from the judge owner. It stays in this page's memory and clears on refresh.</p>
             </div>
 
             {/* Right Column: Code Editor */}
@@ -72,6 +81,8 @@ const ProblemDetail = () => {
                     <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-700">Code Editor</span>
                         <select 
+                            aria-label="Programming language"
+                            disabled={submitting}
                             value={language} 
                             onChange={(e) => {
                                 setLanguage(e.target.value);
@@ -88,7 +99,7 @@ const ProblemDetail = () => {
                     </div>
                     <button 
                         onClick={handleSubmit} 
-                        disabled={submitting}
+                        disabled={submitting || !token.trim()}
                         className={`px-4 py-1.5 rounded text-white font-medium transition ${submitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         {submitting ? 'Submitting...' : 'Submit Code'}
@@ -97,18 +108,19 @@ const ProblemDetail = () => {
                 
                 <div className="h-96">
                     <Editor
+                        loading={<textarea aria-label="Source code" value={code} onChange={e => setCode(e.target.value)} disabled={submitting} className="w-full h-96 p-4 font-mono" />}
                         height="100%"
                         language={language}
                         theme="vs-dark"
                         value={code}
-                        onChange={(value) => setCode(value)}
-                        options={{ minimap: { enabled: false }, fontSize: 14 }}
+                        onChange={(value) => setCode(value || '')}
+                        options={{ minimap: { enabled: false }, fontSize: 14, readOnly: submitting }}
                     />
                 </div>
 
                 {/* Verdict Panel */}
                 {verdict && (
-                    <div className={`p-4 border-t font-semibold flex justify-between items-center ${
+                    <div role="status" aria-live="polite" className={`p-4 border-t font-semibold flex justify-between items-center ${
                         verdict === 'Accepted' ? 'bg-green-50 text-green-700' :
                         verdict === 'Judging...' ? 'bg-blue-50 text-blue-700' :
                         'bg-red-50 text-red-700'
@@ -122,4 +134,7 @@ const ProblemDetail = () => {
     );
 };
 
-export default ProblemDetail;
+export default function ProblemPage() {
+    const { id } = useParams();
+    return <ProblemDetail key={id} id={id} />;
+}

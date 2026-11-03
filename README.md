@@ -1,65 +1,129 @@
-<div align="center">
+# Brainsoft-OJ
 
-# 🚀 Brainsoft-OJ
+A local practice judge for Python, C++17 and Java 21, with a React editor,
+SQLite problem archive and an isolated Linux container for each test case.
 
-[![Node.js](https://img.shields.io/badge/Node.js-Backend-green?style=for-the-badge&logo=node.js)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-Frontend-blue?style=for-the-badge&logo=react)](https://reactjs.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-Database-lightgrey?style=for-the-badge&logo=sqlite)](https://sqlite.org/)
-[![C++](https://img.shields.io/badge/Language-C++_STL-00599C?style=for-the-badge&logo=c%2B%2B)](https://cplusplus.com/)
-[![Java](https://img.shields.io/badge/Language-Java_21-E34F26?style=for-the-badge&logo=java)](https://java.com/)
-[![Python](https://img.shields.io/badge/Language-Python_3-FFD43B?style=for-the-badge&logo=python)](https://python.org/)
+This is an owner-operated learning tool. It is **not a public multi-user judge**.
+See [the execution boundary](SECURITY.md) before enabling submissions.
 
-*A remarkable, local-first Online Judge platform for competitive programming and algorithm practice.*
+## Requirements
 
-</div>
+- Node.js 24 LTS, version 24.14 or later within the 24.x release line.
+- Docker Engine on Linux, or Docker Desktop using Linux containers.
+- Windows, Linux or macOS for the API/frontend. No host compiler is required.
 
-## ✨ Why use Brainsoft-OJ?
-Most Online Judges (like Codeforces, LeetCode, or SYZOJ) require setting up complex Docker environments, heavy SQL databases, or Linux specific dependencies. 
-**Brainsoft-OJ** is designed to be the ultimate local learning tool:
-- **Zero-Config Database:** Uses SQLite. Just run the server, and the database handles itself.
-- **Local Judging:** The custom execution engine safely runs your code on your local machine.
-- **Beautiful UI:** A sleek, modern interface built with React and Tailwind CSS, featuring the Monaco Editor for a VS Code-like coding experience.
-- **Multi-Language:** First-class support for the core competitive programming languages (with full access to their standard libraries).
+SQLite comes with Node; there is no native npm database addon to compile. Docker
+is necessary for judging; without it, the problem archive still works and all
+submissions are refused.
 
-## 🛠️ Supported Languages & Libraries
-- **C++ (g++)**: Full support for the C++ Standard Template Library (`#include <bits/stdc++.h>`, Vectors, Maps, Sets).
-- **Java (JDK 21)**: Full support for Java Collections, `java.math.BigInteger`, and modern JDK 21 features. *(Note: Class name must be `Solution`)*
-- **Python 3**: Full access to Python's robust standard library (`math`, `collections`, `itertools`).
+## Setup
 
-## ⚙️ Architecture
-- **Frontend:** React + Vite + Tailwind CSS
-- **Backend:** Node.js + Express
-- **Database:** SQLite
-- **Judge Engine:** A custom `child_process` engine that routes compilations (g++, javac) and runs
-  the resulting binaries against hidden test cases in real time. Each submission gets its own
-  temporary directory, a compile timeout, a run timeout and an output cap.
+From the repository root:
 
-  > **It is not a sandbox.** Submitted code runs as whichever user runs the server, with that
-  > user's access to the filesystem and the network — it can read `database.sqlite` and print the
-  > hidden test cases if it wants to. That is an acceptable trade for a judge you run yourself on
-  > your own machine, which is what local-first means here. Do not expose this to the internet or
-  > to submitters you do not trust without putting a real boundary around it: a container, a
-  > restricted user account, or an OS-level sandbox.
+```sh
+npm ci --prefix backend
+npm ci --prefix frontend
+docker build -t brainsoft-judge:local backend/runner
+```
 
-## 🚀 How to Run Locally
+The first image build needs the internet to install the language toolchains.
+Rebuild it periodically to receive operating-system/compiler updates. Judging
+does not pull images and contestant containers cannot access the network.
 
-1. **Clone the repository**
-   \`\`\`bash
-   git clone https://github.com/almuzahidseyam/Brainsoft-OJ.git
-   cd Brainsoft-OJ
-   \`\`\`
+Generate a random access token locally:
 
-2. **Install dependencies**
-   - For backend: `cd backend && npm install`
-   - For frontend: `cd frontend && npm install`
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
 
-3. **Start the servers**
-   On Windows, simply double-click the `start.ps1` script (or right-click -> Run with PowerShell). Alternatively:
-   - Backend: `cd backend && npm start`
-   - Frontend: `cd frontend && npm run dev`
+Use the generated value in the backend terminal. Do not commit or share it.
 
-## 🤝 Contribution
-Contributions are highly welcome! Whether you want to add support for Rust/Go, implement a real-time leaderboard, or add new algorithmic problems—feel free to open issues or submit Pull Requests. **Happy Contributing!**
+PowerShell:
 
-## 📄 License
-MIT License
+```powershell
+$env:JUDGE_ENABLED = 'true'
+$env:JUDGE_ACCESS_TOKEN = '<your-generated-token>'
+npm start --prefix backend
+```
+
+Linux/macOS:
+
+```sh
+export JUDGE_ENABLED=true
+export JUDGE_ACCESS_TOKEN='<your-generated-token>'
+npm start --prefix backend
+```
+
+In a second terminal:
+
+```sh
+npm run dev --prefix frontend
+```
+
+Open the address Vite prints (normally `http://127.0.0.1:5173`). Open **A + B
+Problem**, enter the owner token and submit:
+
+```python
+print(sum(map(int, input().split())))
+```
+
+The expected verdict is **Accepted**. The token clears on page refresh. Use
+`public class Solution` for Java. Do not run several backend instances against
+the same Docker engine; the API uses fixed loopback port 5000.
+
+## How judging works
+
+1. Authenticate and validate the request before admission to the four-job queue.
+2. Load judge-only cases from SQLite; the browser receives explicit samples only.
+3. Compile and execute each case in a fresh resource-limited container.
+4. Compare output on the host; expected answers never enter the container.
+5. Remove the container and store a terminal verdict, including infrastructure errors.
+
+Fresh compilation per case intentionally favors isolation and simple recovery
+over throughput. Reported milliseconds measure program execution, not queueing,
+compilation or container startup. Wall-clock timings are illustrative, not a
+fair contest benchmark across machines. The current comparison ignores leading
+and trailing whitespace, but preserves whitespace inside the output.
+
+## Tests
+
+```sh
+npm test --prefix backend
+npm test --prefix frontend
+npm run lint --prefix frontend
+npm run build --prefix frontend
+```
+
+Real Linux container tests (after building the image):
+
+```powershell
+$env:JUDGE_INTEGRATION = '1'
+npm run test:docker --prefix backend
+```
+
+On Linux/macOS use `JUDGE_INTEGRATION=1 npm run test:docker --prefix backend`.
+GitHub Actions runs both unit/API tests and real container checks: supported
+languages, incorrect programs, infinite loops, excess output, descendants,
+network isolation, controller protection and cross-case filesystem isolation.
+
+## Data and recovery
+
+The database is `backend/database.sqlite`. Existing problem/submission records
+are preserved. On upgrade, a `samples` column is added with an empty default;
+populate it with explicitly public `{ "input": "...", "output": "..." }` samples.
+Existing judge-only cases are never automatically copied into public samples.
+Back up the database with the server stopped before upgrading or editing it.
+
+An interrupted job becomes Internal Error on restart. If Docker or cleanup
+fails, repair/restart Docker, then restart the backend. A full queue returns a
+retry message. There is no automatic host execution or hidden unsafe mode.
+Source and verdict records currently remain in the local database; there is no
+automatic retention deletion or multi-user account isolation.
+
+The frontend includes loading, unavailable, empty and failed states; it cancels
+polling on navigation and bounds network/polling waits. For a local production
+preview, `npm run preview --prefix frontend` proxies `/api` to the loopback API.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

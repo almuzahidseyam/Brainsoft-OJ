@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import ProblemList from './pages/ProblemList';
-import ProblemDetail from './pages/ProblemDetail';
+const ProblemDetail = lazy(() => import('./pages/ProblemDetail'));
 
 function App() {
   return (
@@ -17,10 +17,10 @@ function App() {
         </header>
 
         <main className="container mx-auto px-4 py-8">
-          <Routes>
+          <Suspense fallback={<p role="status">Loading editor...</p>}><Routes>
             <Route path="/" element={<ProblemList />} />
             <Route path="/problem/:id" element={<ProblemDetail />} />
-          </Routes>
+          </Routes></Suspense>
         </main>
       </div>
     </Router>
