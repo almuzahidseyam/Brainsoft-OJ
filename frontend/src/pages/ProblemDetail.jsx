@@ -77,8 +77,8 @@ const ProblemDetail = ({ id }) => {
 
             {/* Right Column: Code Editor */}
             <div className="w-full md:w-2/3 flex flex-col bg-white rounded-lg shadow-sm overflow-hidden border border-gray-200">
-                <div className="bg-gray-100 px-4 py-2 border-b flex justify-between items-center">
-                    <div className="flex items-center gap-2">
+                <div className="bg-gray-100 px-4 py-3 border-b flex flex-wrap gap-3 justify-between items-center">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                         <span className="font-semibold text-gray-700">Code Editor</span>
                         <select 
                             aria-label="Programming language"
@@ -90,7 +90,7 @@ const ProblemDetail = ({ id }) => {
                                 else if (e.target.value === 'cpp') setCode('#include <iostream>\nusing namespace std;\n\nint main() {\n    // Your code here\n    return 0;\n}');
                                 else setCode('# Write your code here\n');
                             }}
-                            className="text-sm bg-white border border-gray-300 rounded px-2 py-1 outline-none font-medium"
+                            className="max-w-full text-sm bg-white border border-gray-300 rounded px-2 py-2 focus-visible:outline-2 focus-visible:outline-blue-600 font-medium"
                         >
                             <option value="python">Python 3 (Standard Library)</option>
                             <option value="cpp">C++ (g++ with STL)</option>
@@ -100,7 +100,7 @@ const ProblemDetail = ({ id }) => {
                     <button 
                         onClick={handleSubmit} 
                         disabled={submitting || !token.trim()}
-                        className={`px-4 py-1.5 rounded text-white font-medium transition ${submitting ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        className="px-4 py-2 rounded text-white font-medium whitespace-nowrap bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                         {submitting ? 'Submitting...' : 'Submit Code'}
                     </button>

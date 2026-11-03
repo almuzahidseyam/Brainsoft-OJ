@@ -19,7 +19,7 @@ const ProblemList = () => {
         <div className="flex flex-col gap-6">
             {/* Hero Section */}
             <div className="bg-white border border-gray-200 rounded-xl p-8">
-                <h1 className="text-3xl font-bold mb-2">Practice, submit, understand.</h1>
+                <h1 className="text-3xl font-bold mb-2">Programming practice</h1>
                 <p className="text-gray-600 text-lg max-w-2xl">
                     A local practice judge for C++, Python and Java. Submitting requires an owner-provided access token and an available isolated runner.
                 </p>
