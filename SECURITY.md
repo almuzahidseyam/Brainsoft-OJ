@@ -12,7 +12,8 @@ Each test gets a new container. No host directory, Docker socket, token, databas
 or expected answer is mounted/passed into it. Source and that test's input arrive
 over stdin. The container has no network, a read-only root filesystem, bounded
 tmpfs, 512 MiB memory, one CPU, 64 PIDs and no privilege escalation. The trusted
-controller retains only SETUID/SETGID capabilities; compiler and contestant
+controller retains only SETUID/SETGID/KILL capabilities to switch user and stop
+the child process group; compiler and contestant
 processes drop supplementary groups and run as UID/GID 10001. They cannot modify
 the root-owned controller or write directly to its result pipe.
 

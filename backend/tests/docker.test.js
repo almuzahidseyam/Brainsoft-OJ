@@ -3,7 +3,12 @@ const assert = require('node:assert/strict');
 const { createRunner, command } = require('../judge');
 
 test('real Linux container language, timeout, output and isolation regression checks', { skip: process.env.JUDGE_INTEGRATION !== '1', timeout: 180000 }, async t => {
-    const runner = createRunner({ enabled: true });
+    const runner = createRunner({ enabled: true, execute: async (...args) => {
+        const result = await command(...args);
+        // Fixture-only diagnostics: never expose worker stderr through the public API.
+        if (result.exitCode !== 0 || result.stopped) t.diagnostic(result.stderr || 'Docker command stopped');
+        return result;
+    } });
     assert.equal(await runner.initialize(), true, 'Build runner image and start Linux Docker first');
     const cases = [
         ['python', 'print(sum(map(int,input().split())))', '1 2', 'OK', '3'],

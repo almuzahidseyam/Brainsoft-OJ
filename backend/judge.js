@@ -32,9 +32,9 @@ function command(args, { input = '', timeout = 20000, limit = 1048576 } = {}) {
 
 function containerArgs(name) {
     return ['create', '--pull=never', '--interactive', '--name', name, '--label', LABEL,
-        '--network=none', '--read-only', '--cap-drop=ALL', '--cap-add=SETUID', '--cap-add=SETGID',
+        '--network=none', '--read-only', '--cap-drop=ALL', '--cap-add=SETUID', '--cap-add=SETGID', '--cap-add=KILL',
         '--security-opt=no-new-privileges', '--pids-limit=64', '--cpus=1', '--memory=512m', '--memory-swap=512m',
-        '--ulimit=nofile=128:128', '--tmpfs=/work:rw,nosuid,nodev,size=64m,mode=1777',
+        '--ulimit=nofile=128:128', '--tmpfs=/work:rw,exec,nosuid,nodev,size=64m,mode=1777',
         '--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777', IMAGE];
 }
 
